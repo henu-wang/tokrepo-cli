@@ -1,0 +1,37 @@
+{
+  "name": "tokrepo",
+  "version": "3.1.2",
+  "description": "AI assets for humans and agents — sync, search, install, push. Like git push for your AI skills.",
+  "bin": {
+    "tokrepo": "bin/tokrepo.js"
+  },
+  "files": [
+    "bin/"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/henu-wang/tokrepo-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/henu-wang/tokrepo-cli/issues"
+  },
+  "homepage": "https://tokrepo.com",
+  "keywords": [
+    "ai",
+    "prompt",
+    "skill",
+    "workflow",
+    "mcp",
+    "tokrepo",
+    "claude",
+    "codex",
+    "cursor",
+    "gemini",
+    "agent",
+    "cli"
+  ],
+  "engines": {
+    "node": ">=16"
+  }
+}

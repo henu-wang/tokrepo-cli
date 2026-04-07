@@ -25,7 +25,7 @@ const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 const SYNC_STATE_FILE = path.join(CONFIG_DIR, 'sync-state.json');
 const PROJECT_CONFIG = '.tokrepo.json';
 const DEFAULT_API = 'https://api.tokrepo.com';
-const CLI_VERSION = '3.1.1';
+const CLI_VERSION = '3.2.0';
 const VERSION_CHECK_FILE = path.join(require('os').homedir(), '.tokrepo', '.version-check');
 
 // ─── Helpers ───
@@ -944,12 +944,38 @@ function computeHash(files) {
   return h.digest('hex');
 }
 
+function isProjectDirectory(dirPath) {
+  const PROJECT_MARKERS = [
+    'package.json', '.tokrepo.json', 'go.mod', 'Cargo.toml',
+    'pyproject.toml', 'setup.py', 'Gemfile', 'pom.xml',
+    'build.gradle', 'Makefile', 'CMakeLists.txt', 'deno.json',
+  ];
+  return PROJECT_MARKERS.some(m => fs.existsSync(path.join(dirPath, m)));
+}
+
 function scanDirectory(dirPath) {
   const assets = [];
   const SKIP_DIRS = new Set(['node_modules', '.git', '__pycache__', '.venv', 'dist', 'build']);
   const SKIP_FILES = new Set(['.DS_Store', 'Thumbs.db', 'package-lock.json', 'yarn.lock']);
 
-  // Each subdirectory = one asset; loose files = one asset per file
+  // If the directory itself is a project, treat the whole thing as one asset
+  if (isProjectDirectory(dirPath)) {
+    const files = collectAssetFiles(dirPath);
+    if (files.length > 0) {
+      const title = guessAssetTitle(files, path.basename(dirPath));
+      const hash = computeHash(files);
+      const detectedTags = new Set();
+      for (const f of files) {
+        const ft = detectFileType(f.name);
+        const tag = guessTag(ft);
+        if (tag) detectedTags.add(tag);
+      }
+      assets.push({ title, files, hash, tags: Array.from(detectedTags), sourcePath: dirPath });
+    }
+    return assets;
+  }
+
+  // Non-project directory: each subdirectory = one asset; loose files = one asset per file
   let entries;
   try { entries = fs.readdirSync(dirPath, { withFileTypes: true }); } catch { return assets; }
 
@@ -965,8 +991,6 @@ function scanDirectory(dirPath) {
       const files = collectAssetFiles(fullPath);
       if (files.length === 0) continue;
 
-      // Use directory name as title (matches what `push` uses for remote title)
-      // NOT the markdown heading, which can be completely different
       const title = entry.name;
       const hash = computeHash(files);
       const detectedTags = new Set();

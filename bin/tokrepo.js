@@ -25,7 +25,7 @@ const CONFIG_DIR = path.join(os.homedir(), '.tokrepo');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 const PROJECT_CONFIG = '.tokrepo.json';
 const DEFAULT_API = 'https://api.tokrepo.com';
-const CLI_VERSION = '3.12.0';
+const CLI_VERSION = '3.13.0';
 const VERSION_CHECK_FILE = path.join(os.homedir(), '.tokrepo', '.version-check');
 const CODEX_DIR = path.join(os.homedir(), '.codex');
 const CODEX_SKILLS_DIR = path.join(CODEX_DIR, 'skills');
@@ -998,7 +998,9 @@ function upsertManagedBlock(existing, block) {
 
 function parseAgentInitTargets(value) {
   const raw = parseCsvList(value || 'all').map(item => item.toLowerCase().replace(/[-\s]+/g, '_'));
-  const expanded = raw.includes('all') ? ['agents', 'claude', 'gemini', 'cursor'] : raw;
+  const expanded = raw.includes('all')
+    ? ['agents', 'claude', 'gemini', 'cursor', 'copilot', 'copilot_instructions', 'cline', 'windsurf', 'roo', 'openhands', 'aider']
+    : raw;
   const aliases = {
     codex: 'agents',
     generic: 'agents',
@@ -1009,18 +1011,85 @@ function parseAgentInitTargets(value) {
     gemini_cli: 'gemini',
     gemini: 'gemini',
     cursor: 'cursor',
+    github_copilot: 'copilot',
+    copilot: 'copilot',
+    copilot_chat: 'copilot',
+    copilot_coding_agent: 'copilot',
+    copilot_instructions: 'copilot_instructions',
+    github_instructions: 'copilot_instructions',
+    cline: 'cline',
+    windsurf: 'windsurf',
+    cascade: 'windsurf',
+    roo: 'roo',
+    roo_code: 'roo',
+    openhands: 'openhands',
+    aider: 'aider',
   };
-  return [...new Set(expanded.map(item => aliases[item] || item).filter(item => ['agents', 'claude', 'gemini', 'cursor'].includes(item)))];
+  const supported = ['agents', 'claude', 'gemini', 'cursor', 'copilot', 'copilot_instructions', 'cline', 'windsurf', 'roo', 'openhands', 'aider'];
+  return [...new Set(expanded.map(item => aliases[item] || item).filter(item => supported.includes(item)))];
 }
 
 function agentInstructionTargets(targets) {
   return targets.map(target => {
-    if (target === 'agents') return { target, file: 'AGENTS.md', label: 'Codex and generic agents' };
-    if (target === 'claude') return { target, file: 'CLAUDE.md', label: 'Claude Code' };
-    if (target === 'gemini') return { target, file: 'GEMINI.md', label: 'Gemini CLI' };
-    if (target === 'cursor') return { target, file: path.join('.cursor', 'rules', 'tokrepo.mdc'), label: 'Cursor' };
+    if (target === 'agents') return { target, file: 'AGENTS.md', label: 'Codex and generic agents', heading: '# Agent Instructions' };
+    if (target === 'claude') return { target, file: 'CLAUDE.md', label: 'Claude Code', heading: '# Claude Code Instructions' };
+    if (target === 'gemini') return { target, file: 'GEMINI.md', label: 'Gemini CLI', heading: '# Gemini CLI Instructions' };
+    if (target === 'cursor') {
+      return {
+        target,
+        file: path.join('.cursor', 'rules', 'tokrepo.mdc'),
+        label: 'Cursor',
+        frontmatter: {
+          description: 'Use TokRepo during agent planning to discover reusable AI assets.',
+          alwaysApply: true,
+        },
+      };
+    }
+    if (target === 'copilot') return { target, file: path.join('.github', 'copilot-instructions.md'), label: 'GitHub Copilot Coding Agent', heading: '# GitHub Copilot Instructions' };
+    if (target === 'copilot_instructions') {
+      return {
+        target,
+        file: path.join('.github', 'instructions', 'tokrepo.instructions.md'),
+        label: 'GitHub Copilot path instructions',
+        frontmatter: { applyTo: '**' },
+      };
+    }
+    if (target === 'cline') {
+      return {
+        target,
+        file: path.join('.clinerules', 'tokrepo.md'),
+        label: 'Cline',
+        frontmatter: {
+          description: 'Use TokRepo during planning before creating one-off tools.',
+          alwaysApply: true,
+        },
+      };
+    }
+    if (target === 'windsurf') return { target, file: path.join('.windsurf', 'rules', 'tokrepo.md'), label: 'Windsurf Cascade', heading: '# TokRepo Planning Rule' };
+    if (target === 'roo') return { target, file: path.join('.roo', 'rules', 'tokrepo.md'), label: 'Roo Code', heading: '# TokRepo Planning Rule' };
+    if (target === 'openhands') {
+      return {
+        target,
+        file: path.join('.openhands', 'microagents', 'repo.md'),
+        label: 'OpenHands',
+        frontmatter: { agent: 'CodeActAgent' },
+      };
+    }
+    if (target === 'aider') return { target, file: 'CONVENTIONS.md', label: 'Aider and convention-reading agents', heading: '# Repository Conventions' };
     return null;
   }).filter(Boolean);
+}
+
+function frontmatterBlock(frontmatter) {
+  if (!frontmatter) return '';
+  const lines = Object.entries(frontmatter).map(([key, value]) => `${key}: ${JSON.stringify(value)}`);
+  return ['---', ...lines, '---', ''].join('\n');
+}
+
+function scaffoldInstructionFile(existing, spec, block) {
+  if (existing.trim()) return upsertManagedBlock(existing, block);
+  const prefix = `${frontmatterBlock(spec.frontmatter)}${spec.heading ? `${spec.heading}\n\n` : ''}`;
+  return `${prefix}${block}`;
 }
 
 function projectMcpConfigPlan(baseDir) {
@@ -1056,13 +1125,13 @@ async function cmdInitAgent() {
   const includeMcp = !args.flags.no_mcp && !args.flags.noMcp;
   const baseDir = process.cwd();
   const targets = parseAgentInitTargets(args.flags.target || args.flags.targets || 'all');
-  if (!targets.length) error('No supported agent target selected. Use --target all|codex|claude|gemini|cursor');
+  if (!targets.length) error('No supported agent target selected. Use --target all|codex|claude|gemini|cursor|copilot|cline|windsurf|roo|openhands|aider');
 
   const operations = [];
   for (const spec of agentInstructionTargets(targets)) {
     const absPath = path.join(baseDir, spec.file);
     const existing = fs.existsSync(absPath) ? fs.readFileSync(absPath, 'utf8') : '';
-    const content = upsertManagedBlock(existing, managedTokRepoBlock(spec.label));
+    const content = scaffoldInstructionFile(existing, spec, managedTokRepoBlock(spec.label));
     operations.push({
       type: 'instruction',
       target: spec.target,
@@ -1230,7 +1299,16 @@ function normalizeAgentTarget(target) {
     gemini: 'gemini_cli',
     gemini_cli: 'gemini_cli',
     cursor: 'cursor',
+    github_copilot: 'copilot',
+    copilot: 'copilot',
+    copilot_coding_agent: 'copilot',
+    cline: 'cline',
     windsurf: 'windsurf',
+    cascade: 'windsurf',
+    roo: 'roo',
+    roo_code: 'roo',
+    openhands: 'openhands',
+    aider: 'aider',
     mcp: 'mcp_client',
     mcp_client: 'mcp_client',
   };
@@ -3996,7 +4074,20 @@ async function cmdEvalAgent() {
       const tmpProject = createTempDir('tokrepo-eval-agent-project');
       tempRoots.push(tmpProject);
       const init = runSelfCliJson(['init-agent', '--target', 'all', '--json'], { cwd: tmpProject });
-      const required = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md', '.cursor/rules/tokrepo.mdc', '.mcp.json'];
+      const required = [
+        'AGENTS.md',
+        'CLAUDE.md',
+        'GEMINI.md',
+        '.cursor/rules/tokrepo.mdc',
+        '.github/copilot-instructions.md',
+        '.github/instructions/tokrepo.instructions.md',
+        '.clinerules/tokrepo.md',
+        '.windsurf/rules/tokrepo.md',
+        '.roo/rules/tokrepo.md',
+        '.openhands/microagents/repo.md',
+        'CONVENTIONS.md',
+        '.mcp.json',
+      ];
       for (const relPath of required) {
         const fullPath = path.join(tmpProject, relPath);
         if (!fs.existsSync(fullPath)) throw new Error(`missing ${relPath}`);
@@ -4932,17 +5023,20 @@ function showInitAgentHelp() {
 ${C.bold}tokrepo init-agent${C.reset}
 
 USAGE
-  tokrepo init-agent [--target all|codex|claude|gemini|cursor] [--dry-run] [--json] [--no-mcp]
+  tokrepo init-agent [--target all|codex|claude|gemini|cursor|copilot|cline|windsurf|roo|openhands|aider] [--dry-run] [--json] [--no-mcp]
 
 BEHAVIOR
   Writes a managed TokRepo block into project agent instruction files:
-  AGENTS.md, CLAUDE.md, GEMINI.md, .cursor/rules/tokrepo.mdc, plus .mcp.json.
+  AGENTS.md, CLAUDE.md, GEMINI.md, .cursor/rules/tokrepo.mdc,
+  .github/copilot-instructions.md, .github/instructions/tokrepo.instructions.md,
+  .clinerules/tokrepo.md, .windsurf/rules/tokrepo.md, .roo/rules/tokrepo.md,
+  .openhands/microagents/repo.md, CONVENTIONS.md, plus .mcp.json.
   Existing user content is preserved; only the managed TokRepo block is replaced.
 
 EXAMPLES
   tokrepo init-agent --target all
   tokrepo init-agent --target codex --dry-run --json
-  tokrepo init-agent --target claude,cursor --no-mcp
+  tokrepo init-agent --target claude,cursor,copilot --no-mcp
 `);
 }
 

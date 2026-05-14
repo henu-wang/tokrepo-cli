@@ -1,7 +1,7 @@
 {
   "name": "tokrepo",
-  "version": "3.2.0",
-  "description": "AI assets for humans and agents — sync, search, install, push. Like git push for your AI skills.",
+  "version": "3.12.0",
+  "description": "Agent-native CLI for discovering, installing, and publishing reusable AI skills, prompts, MCP configs, scripts, and workflows.",
   "bin": {
     "tokrepo": "bin/tokrepo.js"
   },
@@ -25,7 +25,13 @@
     "codex",
     "cursor",
     "gemini",
-    "agent"
+    "agent",
+    "agent-tools",
+    "agent-skills",
+    "claude-code",
+    "openai-codex",
+    "mcp-registry",
+    "llms-txt"
   ],
   "engines": {
     "node": ">=16"

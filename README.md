@@ -1,167 +1,59 @@
-# tokrepo
+# TokRepo CLI
 
-The official CLI for [TokRepo](https://tokrepo.com) — an open registry for AI assets.
+Agent-native CLI for discovering, installing, and publishing reusable AI assets: skills, prompts, MCP configs, scripts, workflows, and project instructions.
 
-Search, install, publish, and sync reusable AI skills, prompts, MCP configs, scripts, and workflows from the command line.
+## Agent Bootstrap
 
-[![npm version](https://img.shields.io/npm/v/tokrepo.svg)](https://www.npmjs.com/package/tokrepo)
-[![license](https://img.shields.io/npm/l/tokrepo.svg)](https://github.com/henu-wang/tokrepo-cli/blob/main/LICENSE)
-
-## Quick Start
+Run this once in any repository that will be touched by coding agents:
 
 ```bash
-# Search for assets
-npx tokrepo search "cursor rules"
-
-# Install an asset into your project
-npx tokrepo install awesome-cursor-rules
-
-# Or install globally
-npm install -g tokrepo
-tokrepo search "mcp server"
+npx -y tokrepo@latest init-agent --target all
 ```
 
-## Install
+It writes a managed TokRepo block into `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursor/rules/tokrepo.mdc`, and `.mcp.json`. Future agents get a local rule to call `tokrepo_discover` during planning instead of inventing a one-off local helper first.
+
+## Planning-Time Discovery
+
+For agents without MCP access:
 
 ```bash
-npm install -g tokrepo
+npx -y tokrepo@latest agent-check "audit this Nuxt app for SEO gaps" --json
 ```
 
-Requires Node.js >= 16. Zero dependencies.
-
-## Commands
-
-### Discover & Install
-
-| Command | Description |
-|---------|-------------|
-| `tokrepo search <query>` | Search assets by keyword |
-| `tokrepo install <name\|uuid>` | Smart install — auto-detects asset type and places files correctly |
-| `tokrepo pull <url\|uuid>` | Download raw asset files to current directory |
-
-### Publish & Sync
-
-| Command | Description |
-|---------|-------------|
-| `tokrepo push [files...]` | Push files or directory as a new asset |
-| `tokrepo sync [dir]` | Sync a directory to TokRepo (smart upsert — creates or updates) |
-| `tokrepo status [dir]` | Show diff between local files and remote assets |
-| `tokrepo init` | Create a `.tokrepo.json` project config |
-| `tokrepo update <uuid> [file]` | Update an existing asset by UUID |
-| `tokrepo delete <uuid>` | Delete an asset (with confirmation) |
-
-### Account
-
-| Command | Description |
-|---------|-------------|
-| `tokrepo login` | Save your API token |
-| `tokrepo list` | List your published assets |
-| `tokrepo tags` | List available tags |
-| `tokrepo whoami` | Show current user |
-
-## Usage Examples
-
-### Search and install
+For MCP clients:
 
 ```bash
-# Search by keyword
-tokrepo search "code review"
-
-#  12 results:
-#
-#   1. Code Review Skill for Claude
-#      claude-code, skill  ★12 👁340
-#      tokrepo install ca000374-f5d8-4d75-a30c-460fda0b6b0e
-
-# Install by name (fuzzy match) or UUID
-tokrepo install code-review-skill
-tokrepo install ca000374-f5d8-4d75-a30c-460fda0b6b0e
+npx -y tokrepo-mcp-server
 ```
 
-The `install` command auto-detects the asset type and places files in the right location:
+Then call `tokrepo_discover`, inspect with `tokrepo_detail`, and call `tokrepo_install_plan` before writing files or activating assets.
 
-- **Skills** → `.claude/commands/` or project root
-- **MCP configs** → merged into your MCP settings
-- **Prompts** → `.cursorrules`, `AGENTS.md`, or project root
-- **Scripts** → project root (executable permissions set)
+## Post-Task Handoff
 
-### Publish your own assets
+After an agent creates reusable instructions, scripts, prompts, or configs:
 
 ```bash
-# Login first
-tokrepo login
-# Paste your API token from https://tokrepo.com/en/workflows/submit
-
-# Push a single file
-tokrepo push my-skill.md --public
-
-# Push a directory (all supported files)
-tokrepo push --public .
-
-# Sync — creates new assets or updates existing ones
-tokrepo sync .
+npx -y tokrepo@latest agent-handoff --json
 ```
 
-### Check sync status
+This only suggests private `tokrepo push` commands. It never publishes automatically.
+
+## Common Commands
 
 ```bash
-tokrepo status .
-
-# ┌ tokrepo status
-# │
-# │  Modified:
-# │    my-skill.md (local changes)
-# │
-# │  New (not yet pushed):
-# │    new-prompt.md
-# │
-# └ 1 modified, 1 new
+tokrepo search "code review skill" --kind skill --policy allow --json
+tokrepo detail <uuid> --json
+tokrepo plan <uuid> --target codex
+tokrepo install <uuid> --target codex --dry-run --json
+tokrepo installed --target codex --json
+tokrepo push . --private --kind skill --target codex --install-mode bundle
 ```
 
-## Supported Asset Types
+## Machine-Readable Discovery
 
-| Type | Extensions |
-|------|-----------|
-| Skills | `.skill.md` |
-| Prompts | `.prompt`, `.prompt.md` |
-| Configs | `.json`, `.yaml`, `.yml`, `.toml`, `.mcp.json`, `.cursorrules`, `.claude.md` |
-| Scripts | `.sh`, `.py`, `.js`, `.ts`, `.mjs`, `.go`, `.rs`, `.rb`, `.lua` |
-| Docs | `.md` |
+- Manifest: https://tokrepo.com/.well-known/tokrepo.json
+- MCP server manifest: https://tokrepo.com/.well-known/mcp/server.json
+- Agent instructions: https://tokrepo.com/agent-instructions/tokrepo.md
+- LLM crawler entry: https://tokrepo.com/llms.txt
 
-## Configuration
-
-Config is stored in `~/.tokrepo/config.json` (created on `tokrepo login`).
-
-```json
-{
-  "token": "tk_your_api_token",
-  "api": "https://api.tokrepo.com"
-}
-```
-
-Per-project config can be set in `.tokrepo.json`:
-
-```json
-{
-  "defaultTags": ["claude-code", "productivity"],
-  "defaultVisibility": "public"
-}
-```
-
-## Security
-
-- API tokens are stored with `0600` permissions (owner-only read/write)
-- Config directory uses `0700` permissions
-- HTTPS is enforced for all API requests — the CLI will refuse to send tokens over plain HTTP
-- No telemetry, no tracking, no analytics
-
-## Related
-
-- [tokrepo.com](https://tokrepo.com) — Web interface
-- [tokrepo-mcp-server](https://github.com/henu-wang/tokrepo-mcp-server) — MCP server for AI-native access
-- [tokrepo-search-skill](https://github.com/henu-wang/tokrepo-search-skill) — Cross-platform search skill
-- [tokrepo](https://github.com/henu-wang/tokrepo) — Project overview
-
-## License
-
-MIT
+TokRepo records anonymous aggregate funnel events for agent discovery, plan, install, handoff, and push. It does not send task text or file contents. Disable with `TOKREPO_TELEMETRY=0`.

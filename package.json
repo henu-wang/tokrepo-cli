@@ -1,6 +1,6 @@
 {
   "name": "tokrepo",
-  "version": "3.13.0",
+  "version": "3.13.1",
   "description": "Agent-native CLI for discovering, installing, and publishing reusable AI skills, prompts, MCP configs, scripts, and workflows.",
   "bin": {
     "tokrepo": "bin/tokrepo.js"

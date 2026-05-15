@@ -25,7 +25,7 @@ const CONFIG_DIR = path.join(os.homedir(), '.tokrepo');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 const PROJECT_CONFIG = '.tokrepo.json';
 const DEFAULT_API = 'https://api.tokrepo.com';
-const CLI_VERSION = '3.13.0';
+const CLI_VERSION = '3.13.1';
 const VERSION_CHECK_FILE = path.join(os.homedir(), '.tokrepo', '.version-check');
 const CODEX_DIR = path.join(os.homedir(), '.codex');
 const CODEX_SKILLS_DIR = path.join(CODEX_DIR, 'skills');
@@ -1940,6 +1940,20 @@ function pickWritablePath(destPath, overwrite) {
   return candidate;
 }
 
+function pickWritablePathQuiet(destPath, overwrite) {
+  if (!fs.existsSync(destPath) || overwrite) return destPath;
+  const dir = path.dirname(destPath);
+  const ext = path.extname(destPath);
+  const base = path.basename(destPath, ext);
+  let index = 2;
+  let candidate = path.join(dir, `${base}.${index}${ext}`);
+  while (fs.existsSync(candidate)) {
+    index++;
+    candidate = path.join(dir, `${base}.${index}${ext}`);
+  }
+  return candidate;
+}
+
 function formatGeminiContent(workflow, contents) {
   const parts = [
     `# ${workflow.title || 'TokRepo Asset'}`,
@@ -3295,28 +3309,55 @@ async function installOneAsset(target, config, apiBase, opts) {
 
   if (targetTool === 'gemini') {
     const destDir = path.join(process.cwd(), '.gemini');
-    if (!fs.existsSync(destDir)) {
+    if (!opts.dryRun && !opts.stage && !fs.existsSync(destDir)) {
       fs.mkdirSync(destDir, { recursive: true });
     }
-    const destPath = pickWritablePath(path.join(destDir, 'GEMINI.md'), Boolean(opts.yes));
+    const pickPath = (opts.json || opts.dryRun || opts.stage) ? pickWritablePathQuiet : pickWritablePath;
+    const destPath = pickPath(path.join(destDir, 'GEMINI.md'), Boolean(opts.yes));
     const resolvedDir = path.resolve(destDir);
     const resolvedDest = path.resolve(destPath);
     if (!resolvedDest.startsWith(resolvedDir + path.sep) && resolvedDest !== resolvedDir) {
       die('Install path escaped .gemini directory.');
     }
+    const plannedFile = {
+      path: destPath,
+      sourceName: 'GEMINI.md',
+      bytes: Buffer.byteLength(formatGeminiContent(workflow, contents)),
+    };
+    if (opts.dryRun || opts.stage) {
+      if (!opts.json) {
+        info(`Dry run: 1 file would be installed to ${path.relative(process.cwd(), destPath)}`);
+      }
+      return {
+        uuid,
+        title: workflow.title,
+        targetTool: 'gemini',
+        dryRun: true,
+        installedFiles: [],
+        plannedFiles: [plannedFile],
+        plan: {
+          targetTool: 'gemini',
+          files: [plannedFile],
+        },
+        sourceUrl: `https://tokrepo.com/en/workflows/${uuid}`,
+      };
+    }
     fs.writeFileSync(destPath, formatGeminiContent(workflow, contents));
     const relPath = path.relative(process.cwd(), destPath);
-    success(`Installed: ${relPath}`);
+    if (!opts.json) success(`Installed: ${relPath}`);
     if (path.basename(destPath) !== 'GEMINI.md') {
       warn('Gemini CLI automatically reads GEMINI.md. Merge this file if you want it loaded by default.');
     }
-    log('');
-    success(`1 file installed from ${C.bold}${workflow.title}${C.reset}`);
-    log(`  ${C.dim}Source: https://tokrepo.com/en/workflows/${uuid}${C.reset}\n`);
+    if (!opts.json) {
+      log('');
+      success(`1 file installed from ${C.bold}${workflow.title}${C.reset}`);
+      log(`  ${C.dim}Source: https://tokrepo.com/en/workflows/${uuid}${C.reset}\n`);
+    }
     return {
       uuid,
       title: workflow.title,
       targetTool: 'gemini',
+      dryRun: false,
       installedFiles: [{ path: destPath }],
       sourceUrl: `https://tokrepo.com/en/workflows/${uuid}`,
     };
@@ -3324,6 +3365,8 @@ async function installOneAsset(target, config, apiBase, opts) {
 
   // Smart install based on asset type
   let installed = 0;
+  const plannedFiles = [];
+  const installedFiles = [];
 
   for (const item of contents) {
     let destDir = process.cwd();
@@ -3338,7 +3381,7 @@ async function installOneAsset(target, config, apiBase, opts) {
         // Install to .claude/skills/ if it exists, otherwise current dir
         const claudeSkillsDir = path.join(process.cwd(), '.claude', 'skills');
         if (fs.existsSync(path.join(process.cwd(), '.claude'))) {
-          if (!fs.existsSync(claudeSkillsDir)) {
+          if (!opts.dryRun && !opts.stage && !fs.existsSync(claudeSkillsDir)) {
             fs.mkdirSync(claudeSkillsDir, { recursive: true });
           }
           destDir = claudeSkillsDir;
@@ -3385,7 +3428,21 @@ async function installOneAsset(target, config, apiBase, opts) {
       continue;
     }
 
-    destPath = pickWritablePath(destPath, Boolean(opts.yes));
+    const pickPath = (opts.json || opts.dryRun || opts.stage) ? pickWritablePathQuiet : pickWritablePath;
+    destPath = pickPath(destPath, Boolean(opts.yes));
+    const plannedFile = {
+      path: destPath,
+      sourceName: item.name,
+      type: item.type || assetType,
+      bytes: Buffer.byteLength(item.content || ''),
+    };
+    plannedFiles.push(plannedFile);
+
+    if (opts.dryRun || opts.stage) {
+      continue;
+    }
+
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
 
     fs.writeFileSync(destPath, item.content);
 
@@ -3395,18 +3452,47 @@ async function installOneAsset(target, config, apiBase, opts) {
     }
 
     const relPath = path.relative(process.cwd(), destPath);
-    success(`Installed: ${relPath}`);
+    if (!opts.json) success(`Installed: ${relPath}`);
+    installedFiles.push({ path: destPath, sourceName: item.name, type: item.type || assetType });
     installed++;
   }
 
-  log('');
-  success(`${installed} file(s) installed from ${C.bold}${workflow.title}${C.reset}`);
-  log(`  ${C.dim}Source: https://tokrepo.com/en/workflows/${uuid}${C.reset}\n`);
+  if (opts.dryRun || opts.stage) {
+    if (!opts.json) {
+      info(`Dry run: ${plannedFiles.length} file(s) would be installed to the current project`);
+      for (const file of plannedFiles) {
+        log(`  ${C.dim}•${C.reset} ${path.relative(process.cwd(), file.path)}`);
+      }
+    }
+    return {
+      uuid,
+      title: workflow.title,
+      targetTool: targetTool || 'project',
+      dryRun: true,
+      staged: Boolean(opts.stage),
+      installed: 0,
+      installedFiles: [],
+      plannedFiles,
+      plan: {
+        targetTool: targetTool || 'project',
+        files: plannedFiles,
+      },
+      sourceUrl: `https://tokrepo.com/en/workflows/${uuid}`,
+    };
+  }
+
+  if (!opts.json) {
+    log('');
+    success(`${installed} file(s) installed from ${C.bold}${workflow.title}${C.reset}`);
+    log(`  ${C.dim}Source: https://tokrepo.com/en/workflows/${uuid}${C.reset}\n`);
+  }
   return {
     uuid,
     title: workflow.title,
     targetTool: targetTool || 'project',
+    dryRun: false,
     installed,
+    installedFiles,
     sourceUrl: `https://tokrepo.com/en/workflows/${uuid}`,
   };
 }
